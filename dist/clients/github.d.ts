@@ -53,5 +53,23 @@ export declare function getDefaultBranch(octokit: Octokit): Promise<string>;
  * Create a new branch from the default branch
  */
 export declare function createBranch(octokit: Octokit, branchName: string): Promise<void>;
+/**
+ * Get PR information
+ */
+export declare function getPRInfo(octokit: Octokit, prNumber: number): Promise<{
+    title: string;
+    body: string;
+    headRef: string;
+    baseRef: string;
+    changedFiles: string[];
+}>;
+/**
+ * Comment on a PR
+ */
+export declare function commentOnPR(octokit: Octokit, prNumber: number, body: string): Promise<number>;
+/**
+ * Reply to a specific comment on a PR
+ */
+export declare function replyToComment(octokit: Octokit, prNumber: number, commentId: number, body: string): Promise<number>;
 export {};
 //# sourceMappingURL=github.d.ts.map

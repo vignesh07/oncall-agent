@@ -219,3 +219,85 @@ export async function createBranch(
     sha: ref.data.object.sha
   })
 }
+
+/**
+ * Get PR information
+ */
+export async function getPRInfo(
+  octokit: Octokit,
+  prNumber: number
+): Promise<{
+  title: string
+  body: string
+  headRef: string
+  baseRef: string
+  changedFiles: string[]
+}> {
+  const { owner, repo } = getRepo()
+
+  // Get PR details
+  const pr = await octokit.rest.pulls.get({
+    owner,
+    repo,
+    pull_number: prNumber
+  })
+
+  // Get changed files
+  const files = await octokit.rest.pulls.listFiles({
+    owner,
+    repo,
+    pull_number: prNumber,
+    per_page: 100
+  })
+
+  return {
+    title: pr.data.title,
+    body: pr.data.body || '',
+    headRef: pr.data.head.ref,
+    baseRef: pr.data.base.ref,
+    changedFiles: files.data.map(f => f.filename)
+  }
+}
+
+/**
+ * Comment on a PR
+ */
+export async function commentOnPR(
+  octokit: Octokit,
+  prNumber: number,
+  body: string
+): Promise<number> {
+  const { owner, repo } = getRepo()
+
+  const response = await octokit.rest.issues.createComment({
+    owner,
+    repo,
+    issue_number: prNumber, // PRs are issues in GitHub API
+    body
+  })
+
+  return response.data.id
+}
+
+/**
+ * Reply to a specific comment on a PR
+ */
+export async function replyToComment(
+  octokit: Octokit,
+  prNumber: number,
+  commentId: number,
+  body: string
+): Promise<number> {
+  const { owner, repo } = getRepo()
+
+  // For issue comments, we just create a new comment mentioning the context
+  // For review comments, we'd use a different API
+  const response = await octokit.rest.issues.createComment({
+    owner,
+    repo,
+    issue_number: prNumber,
+    body: `> Responding to review feedback\n\n${body}`
+  })
+
+  return response.data.id
+}

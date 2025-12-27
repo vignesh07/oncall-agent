@@ -1,0 +1,41 @@
+# Example workflow: oncall-agent PR Review
+# Triggers when someone comments on a PR with "@oncall-agent" mention
+# The agent will respond to review feedback and push fixes
+
+name: oncall-agent PR Review
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  respond-to-review:
+    # Only run on PR comments that mention @oncall-agent
+    if: |
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '@oncall-agent')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Respond to review comment
+        uses: vignesh07/oncall-agent@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          mode: review
+          pr_number: ${{ github.event.issue.number }}
+          comment_body: ${{ github.event.comment.body }}
+          comment_id: ${{ github.event.comment.id }}
+          # Optional: specify test command to run after changes
+          test_command: 'npm test'
+          # Create PRs as non-draft (ready for review)
+          draft_pr: 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

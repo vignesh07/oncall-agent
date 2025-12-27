@@ -167,3 +167,70 @@ export async function configureGit(): Promise<void> {
   await exec.exec('git', ['config', 'user.name', 'oncall-agent[bot]'], { silent: true })
   await exec.exec('git', ['config', 'user.email', 'oncall-agent[bot]@users.noreply.github.com'], { silent: true })
 }
+
+/**
+ * Fetch and checkout a PR branch
+ */
+export async function checkoutPRBranch(prNumber: number): Promise<string> {
+  // Fetch the PR
+  await exec.exec('git', ['fetch', 'origin', `pull/${prNumber}/head:pr-${prNumber}`], { silent: true })
+
+  // Checkout the PR branch
+  await exec.exec('git', ['checkout', `pr-${prNumber}`], { silent: true })
+
+  // Get the actual branch name from the PR
+  let branchName = ''
+  await exec.exec('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+    listeners: {
+      stdout: (data: Buffer) => {
+        branchName += data.toString()
+      }
+    },
+    silent: true
+  })
+
+  return branchName.trim()
+}
+
+/**
+ * Push changes to the PR branch
+ */
+export async function pushToPRBranch(prNumber: number, remoteBranch: string): Promise<void> {
+  await exec.exec('git', ['push', 'origin', `HEAD:${remoteBranch}`], { silent: true })
+}
+
+/**
+ * Commit changes for a PR review response
+ */
+export async function commitReviewChanges(commentSummary: string): Promise<boolean> {
+  // Check if there are staged changes
+  let statusOutput = ''
+  await exec.exec('git', ['status', '--porcelain'], {
+    listeners: {
+      stdout: (data: Buffer) => {
+        statusOutput += data.toString()
+      }
+    },
+    silent: true
+  })
+
+  if (!statusOutput.trim()) {
+    core.info('No changes to commit')
+    return false
+  }
+
+  // Truncate comment summary for commit message
+  const summary = commentSummary.length > 50
+    ? commentSummary.substring(0, 47) + '...'
+    : commentSummary
+
+  const commitMessage = `fix: address review feedback
+
+${summary}
+
+🤖 Generated with oncall-agent in response to PR review`
+
+  await exec.exec('git', ['commit', '-m', commitMessage])
+
+  return true
+}

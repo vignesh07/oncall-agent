@@ -112,10 +112,16 @@ export interface ActionInputs {
   anthropicApiKey: string
   alertPayload: string
   alertSource: string
-  mode: 'auto' | 'pr' | 'analyze'
+  mode: 'auto' | 'pr' | 'analyze' | 'review'
   createIssue: boolean
   pagerdutyApiKey?: string
   confidenceThreshold: Confidence
   timeoutMinutes: number
   maxFilesChanged: number
+  draftPr: boolean
+  testCommand?: string
+  // PR Review mode inputs
+  prNumber?: number
+  commentBody?: string
+  commentId?: number
 }

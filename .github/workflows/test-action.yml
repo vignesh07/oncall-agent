@@ -121,6 +121,8 @@ jobs:
           mode: ${{ inputs.mode }}
           create_issue: 'true'
           confidence_threshold: 'low'
+          draft_pr: 'false'
+          test_command: 'npm test'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

@@ -21,7 +21,7 @@ inputs:
     default: 'auto'
 
   mode:
-    description: 'Operation mode: pr = attempt fix, analyze = comment only, auto = decide based on context'
+    description: 'Operation mode: pr = attempt fix, analyze = comment only, auto = decide based on context, review = respond to PR comments'
     required: false
     default: 'auto'
 
@@ -48,6 +48,28 @@ inputs:
     description: 'Maximum number of files Claude can modify in a fix'
     required: false
     default: '10'
+
+  draft_pr:
+    description: 'Create pull requests as drafts'
+    required: false
+    default: 'true'
+
+  test_command:
+    description: 'Command to run tests (e.g., npm test, pytest). If set, Claude will run tests and fix failures.'
+    required: false
+
+  # PR Review Mode inputs (for responding to PR comments)
+  pr_number:
+    description: 'PR number to respond to (for review mode)'
+    required: false
+
+  comment_body:
+    description: 'Comment body to respond to (for review mode)'
+    required: false
+
+  comment_id:
+    description: 'Comment ID for threading responses (for review mode)'
+    required: false
 
 outputs:
   action_taken:

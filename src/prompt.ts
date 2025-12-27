@@ -5,7 +5,7 @@ import * as path from 'path'
 /**
  * Build the prompt for Claude Code to investigate and fix the alert
  */
-export function buildPrompt(alert: Alert, config: Config): string {
+export function buildPrompt(alert: Alert, config: Config, testCommand?: string): string {
   const sections: string[] = []
 
   // Header
@@ -78,14 +78,25 @@ ${config.protectedPaths.map(p => `- ${p}`).join('\n')}`)
   }
 
   // Instructions
-  sections.push(`
+  let instructions = `
 ## Instructions
 
 Your PRIMARY goal is to FIX the issue if possible. Follow these steps:
 
 1. **Investigate** - Read the files mentioned in the stack trace and find the bug
-2. **Fix it** - If you can identify the bug, USE THE EDIT TOOL to fix it immediately
-3. **Verify** - Check that your fix is correct and doesn't break anything
+2. **Fix it** - If you can identify the bug, USE THE EDIT TOOL to fix it immediately`
+
+  if (testCommand) {
+    instructions += `
+3. **Run tests** - After making your fix, run: \`${testCommand}\`
+4. **Fix test failures** - If tests fail, analyze the output and fix the issues
+5. **Repeat** - Keep running tests until they pass`
+  } else {
+    instructions += `
+3. **Verify** - Check that your fix is correct and doesn't break anything`
+  }
+
+  instructions += `
 
 ### What to fix:
 - Null/undefined checks
@@ -95,7 +106,16 @@ Your PRIMARY goal is to FIX the issue if possible. Follow these steps:
 - Missing validation
 
 ### IMPORTANT: You MUST use the Edit tool to make changes if you find a fixable bug.
-Do not just analyze - actually fix the code!
+Do not just analyze - actually fix the code!`
+
+  if (testCommand) {
+    instructions += `
+
+### IMPORTANT: After fixing, run \`${testCommand}\` to verify your changes work.
+If tests fail, fix the issues and run again until all tests pass.`
+  }
+
+  instructions += `
 
 ## If Not Fixable
 
@@ -107,7 +127,7 @@ Only if you cannot identify a code fix, provide analysis:
 ## Confidence Rating
 
 After your fix or analysis:
-- **high**: Bug found and fixed, or obvious issue identified
+- **high**: Bug found and fixed${testCommand ? ', tests passing' : ''}, or obvious issue identified
 - **medium**: Likely fix applied, should be reviewed
 - **low**: Uncertain, needs human investigation
 
@@ -115,7 +135,9 @@ After your fix or analysis:
 
 - Make minimal, safe changes
 - Do not modify protected paths
-- Ensure backward compatibility`)
+- Ensure backward compatibility`
+
+  sections.push(instructions)
 
   return sections.join('\n')
 }
@@ -149,6 +171,77 @@ function getRunbookContent(alert: Alert, config: Config): string | undefined {
   }
 
   return undefined
+}
+
+/**
+ * Build prompt for responding to PR review comments
+ */
+export function buildReviewPrompt(options: {
+  prNumber: number
+  prTitle: string
+  prBody: string
+  commentBody: string
+  changedFiles: string[]
+  testCommand?: string
+}): string {
+  const { prNumber, prTitle, prBody, commentBody, changedFiles, testCommand } = options
+
+  let prompt = `You are responding to a code review comment on PR #${prNumber}.
+
+## PR Information
+
+**Title:** ${prTitle}
+
+**Description:**
+${prBody}
+
+**Files changed in this PR:**
+${changedFiles.map(f => `- ${f}`).join('\n')}
+
+## Review Comment
+
+The reviewer has left the following feedback:
+
+> ${commentBody.split('\n').join('\n> ')}
+
+## Instructions
+
+Your task is to address the reviewer's feedback:
+
+1. **Understand** - Read the files mentioned and understand the current implementation
+2. **Address** - Make the changes requested by the reviewer
+3. **Fix** - USE THE EDIT TOOL to implement the changes`
+
+  if (testCommand) {
+    prompt += `
+4. **Run tests** - After making changes, run: \`${testCommand}\`
+5. **Fix failures** - If tests fail, fix the issues and run again until they pass`
+  }
+
+  prompt += `
+
+### IMPORTANT: You MUST use the Edit tool to make changes.
+Do not just analyze - actually fix the code based on the feedback!`
+
+  if (testCommand) {
+    prompt += `
+
+### IMPORTANT: After making changes, run \`${testCommand}\` to verify your changes work.
+If tests fail, fix the issues and run again until all tests pass.`
+  }
+
+  prompt += `
+
+### Guidelines
+
+- Make minimal, focused changes that address the specific feedback
+- Maintain consistency with existing code style
+- Ensure changes don't break existing functionality
+- If the request is unclear or not feasible, explain why
+
+After making changes, summarize what you did.`
+
+  return prompt
 }
 
 /**

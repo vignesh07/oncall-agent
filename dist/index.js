@@ -31271,6 +31271,9 @@ exports.listRecentIssues = listRecentIssues;
 exports.linkPRToIssue = linkPRToIssue;
 exports.getDefaultBranch = getDefaultBranch;
 exports.createBranch = createBranch;
+exports.getPRInfo = getPRInfo;
+exports.commentOnPR = commentOnPR;
+exports.replyToComment = replyToComment;
 const github = __importStar(__nccwpck_require__(3228));
 /**
  * Get repository owner and name from GitHub context
@@ -31417,6 +31420,60 @@ async function createBranch(octokit, branchName) {
         ref: `refs/heads/${branchName}`,
         sha: ref.data.object.sha
     });
+}
+/**
+ * Get PR information
+ */
+async function getPRInfo(octokit, prNumber) {
+    const { owner, repo } = getRepo();
+    // Get PR details
+    const pr = await octokit.rest.pulls.get({
+        owner,
+        repo,
+        pull_number: prNumber
+    });
+    // Get changed files
+    const files = await octokit.rest.pulls.listFiles({
+        owner,
+        repo,
+        pull_number: prNumber,
+        per_page: 100
+    });
+    return {
+        title: pr.data.title,
+        body: pr.data.body || '',
+        headRef: pr.data.head.ref,
+        baseRef: pr.data.base.ref,
+        changedFiles: files.data.map(f => f.filename)
+    };
+}
+/**
+ * Comment on a PR
+ */
+async function commentOnPR(octokit, prNumber, body) {
+    const { owner, repo } = getRepo();
+    const response = await octokit.rest.issues.createComment({
+        owner,
+        repo,
+        issue_number: prNumber, // PRs are issues in GitHub API
+        body
+    });
+    return response.data.id;
+}
+/**
+ * Reply to a specific comment on a PR
+ */
+async function replyToComment(octokit, prNumber, commentId, body) {
+    const { owner, repo } = getRepo();
+    // For issue comments, we just create a new comment mentioning the context
+    // For review comments, we'd use a different API
+    const response = await octokit.rest.issues.createComment({
+        owner,
+        repo,
+        issue_number: prNumber,
+        body: `> Responding to review feedback\n\n${body}`
+    });
+    return response.data.id;
 }
 
 
@@ -31890,6 +31947,9 @@ exports.getDefaultBranch = getDefaultBranch;
 exports.hasUncommittedChanges = hasUncommittedChanges;
 exports.discardChanges = discardChanges;
 exports.configureGit = configureGit;
+exports.checkoutPRBranch = checkoutPRBranch;
+exports.pushToPRBranch = pushToPRBranch;
+exports.commitReviewChanges = commitReviewChanges;
 const exec = __importStar(__nccwpck_require__(5236));
 const core = __importStar(__nccwpck_require__(7484));
 /**
@@ -32038,6 +32098,62 @@ async function configureGit() {
     await exec.exec('git', ['config', 'user.name', 'oncall-agent[bot]'], { silent: true });
     await exec.exec('git', ['config', 'user.email', 'oncall-agent[bot]@users.noreply.github.com'], { silent: true });
 }
+/**
+ * Fetch and checkout a PR branch
+ */
+async function checkoutPRBranch(prNumber) {
+    // Fetch the PR
+    await exec.exec('git', ['fetch', 'origin', `pull/${prNumber}/head:pr-${prNumber}`], { silent: true });
+    // Checkout the PR branch
+    await exec.exec('git', ['checkout', `pr-${prNumber}`], { silent: true });
+    // Get the actual branch name from the PR
+    let branchName = '';
+    await exec.exec('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+        listeners: {
+            stdout: (data) => {
+                branchName += data.toString();
+            }
+        },
+        silent: true
+    });
+    return branchName.trim();
+}
+/**
+ * Push changes to the PR branch
+ */
+async function pushToPRBranch(prNumber, remoteBranch) {
+    await exec.exec('git', ['push', 'origin', `HEAD:${remoteBranch}`], { silent: true });
+}
+/**
+ * Commit changes for a PR review response
+ */
+async function commitReviewChanges(commentSummary) {
+    // Check if there are staged changes
+    let statusOutput = '';
+    await exec.exec('git', ['status', '--porcelain'], {
+        listeners: {
+            stdout: (data) => {
+                statusOutput += data.toString();
+            }
+        },
+        silent: true
+    });
+    if (!statusOutput.trim()) {
+        core.info('No changes to commit');
+        return false;
+    }
+    // Truncate comment summary for commit message
+    const summary = commentSummary.length > 50
+        ? commentSummary.substring(0, 47) + '...'
+        : commentSummary;
+    const commitMessage = `fix: address review feedback
+
+${summary}
+
+🤖 Generated with oncall-agent in response to PR review`;
+    await exec.exec('git', ['commit', '-m', commitMessage]);
+    return true;
+}
 
 
 /***/ }),
@@ -32095,16 +32211,24 @@ const git_1 = __nccwpck_require__(1243);
  * Get action inputs from environment
  */
 function getInputs() {
+    const prNumberInput = core.getInput('pr_number');
+    const commentIdInput = core.getInput('comment_id');
     return {
         anthropicApiKey: core.getInput('anthropic_api_key', { required: true }),
-        alertPayload: core.getInput('alert_payload', { required: true }),
+        alertPayload: core.getInput('alert_payload') || '{}',
         alertSource: core.getInput('alert_source') || 'auto',
         mode: (core.getInput('mode') || 'auto'),
         createIssue: core.getInput('create_issue') !== 'false',
         pagerdutyApiKey: core.getInput('pagerduty_api_key') || undefined,
         confidenceThreshold: (core.getInput('confidence_threshold') || 'medium'),
         timeoutMinutes: parseInt(core.getInput('timeout_minutes') || '10', 10),
-        maxFilesChanged: parseInt(core.getInput('max_files_changed') || '10', 10)
+        maxFilesChanged: parseInt(core.getInput('max_files_changed') || '10', 10),
+        draftPr: core.getInput('draft_pr') !== 'false',
+        testCommand: core.getInput('test_command') || undefined,
+        // PR Review mode inputs
+        prNumber: prNumberInput ? parseInt(prNumberInput, 10) : undefined,
+        commentBody: core.getInput('comment_body') || undefined,
+        commentId: commentIdInput ? parseInt(commentIdInput, 10) : undefined
     };
 }
 /**
@@ -32229,6 +32353,94 @@ ${analysis}
     return comment;
 }
 /**
+ * Handle review mode - respond to PR comments
+ */
+async function handleReviewMode(inputs) {
+    if (!inputs.prNumber) {
+        throw new Error('pr_number is required for review mode');
+    }
+    if (!inputs.commentBody) {
+        throw new Error('comment_body is required for review mode');
+    }
+    const githubToken = process.env.GITHUB_TOKEN;
+    if (!githubToken) {
+        throw new Error('GITHUB_TOKEN environment variable is required');
+    }
+    const octokit = github.getOctokit(githubToken);
+    core.info(`Review mode: Responding to comment on PR #${inputs.prNumber}`);
+    // Get PR info
+    const prInfo = await (0, github_1.getPRInfo)(octokit, inputs.prNumber);
+    core.info(`PR: "${prInfo.title}" (${prInfo.changedFiles.length} files)`);
+    // Configure git
+    await (0, git_1.configureGit)();
+    // Checkout the PR branch
+    core.info(`Checking out PR branch: ${prInfo.headRef}`);
+    await (0, git_1.checkoutPRBranch)(inputs.prNumber);
+    // Build review prompt
+    const prompt = (0, prompt_1.buildReviewPrompt)({
+        prNumber: inputs.prNumber,
+        prTitle: prInfo.title,
+        prBody: prInfo.body,
+        commentBody: inputs.commentBody,
+        changedFiles: prInfo.changedFiles,
+        testCommand: inputs.testCommand
+    });
+    core.info(`Built review prompt (${prompt.length} chars)`);
+    // Run Claude Code
+    core.info('Running Claude Code to address review feedback...');
+    const claudeResult = await (0, claude_1.runClaudeCode)(prompt, {
+        timeoutMinutes: inputs.timeoutMinutes,
+        maxFilesChanged: inputs.maxFilesChanged
+    });
+    core.info(`Claude finished. Success: ${claudeResult.success}, Has changes: ${claudeResult.hasChanges}`);
+    if (claudeResult.hasChanges) {
+        // Stage changes
+        const changedFiles = await (0, git_1.stageChanges)();
+        core.info(`Staged ${changedFiles.length} files`);
+        // Commit
+        const committed = await (0, git_1.commitReviewChanges)(inputs.commentBody);
+        if (committed) {
+            // Push to PR branch
+            await (0, git_1.pushToPRBranch)(inputs.prNumber, prInfo.headRef);
+            core.info('Pushed changes to PR branch');
+            // Comment on PR
+            await (0, github_1.commentOnPR)(octokit, inputs.prNumber, `## 🤖 oncall-agent Update
+
+I've addressed the review feedback and pushed new changes.
+
+### What I Did
+
+${claudeResult.analysis}
+
+---
+*Generated by [oncall-agent](https://github.com/vignesh07/oncall-agent)*`);
+            return {
+                actionTaken: 'pr_created', // Using pr_created to indicate changes pushed
+                prNumber: inputs.prNumber,
+                analysis: claudeResult.analysis,
+                confidence: claudeResult.confidence
+            };
+        }
+    }
+    // No changes made - just comment with analysis
+    await (0, github_1.commentOnPR)(octokit, inputs.prNumber, `## 🤖 oncall-agent Response
+
+I analyzed the review feedback but didn't make any changes.
+
+### Analysis
+
+${claudeResult.analysis}
+
+---
+*Generated by [oncall-agent](https://github.com/vignesh07/oncall-agent)*`);
+    return {
+        actionTaken: 'analysis_only',
+        prNumber: inputs.prNumber,
+        analysis: claudeResult.analysis,
+        confidence: claudeResult.confidence
+    };
+}
+/**
  * Main action entry point
  */
 async function run() {
@@ -32240,6 +32452,13 @@ async function run() {
     try {
         const inputs = getInputs();
         core.info('oncall-agent starting...');
+        // Handle review mode separately
+        if (inputs.mode === 'review') {
+            result = await handleReviewMode(inputs);
+            setOutputs(result);
+            core.info(`Review completed: ${result.actionTaken}`);
+            return;
+        }
         // Parse the alert payload
         let payload;
         try {
@@ -32290,7 +32509,7 @@ async function run() {
             core.info(`Created tracking issue #${issueNumber}`);
         }
         // Build prompt for Claude
-        const prompt = (0, prompt_1.buildPrompt)(alert, config);
+        const prompt = (0, prompt_1.buildPrompt)(alert, config, inputs.testCommand);
         core.info(`Built prompt (${prompt.length} chars)`);
         // Determine mode
         const shouldAttemptFix = inputs.mode === 'pr' || inputs.mode === 'auto';
@@ -32330,7 +32549,7 @@ async function run() {
                 body: formatPRBody(alert, claudeResult.analysis, claudeResult.confidence, issueNumber),
                 head: branchName,
                 base: defaultBranch,
-                draft: true,
+                draft: inputs.draftPr,
                 labels: ['oncall-agent', 'automated-fix']
             });
             core.info(`Created PR #${prNumber}`);
@@ -33506,13 +33725,14 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.buildPrompt = buildPrompt;
+exports.buildReviewPrompt = buildReviewPrompt;
 exports.buildAnalysisPrompt = buildAnalysisPrompt;
 const fs = __importStar(__nccwpck_require__(9896));
 const path = __importStar(__nccwpck_require__(6928));
 /**
  * Build the prompt for Claude Code to investigate and fix the alert
  */
-function buildPrompt(alert, config) {
+function buildPrompt(alert, config, testCommand) {
     const sections = [];
     // Header
     sections.push(`You are an on-call engineer responding to a production alert.`);
@@ -33576,14 +33796,24 @@ The following paths should never be modified by automated fixes:
 ${config.protectedPaths.map(p => `- ${p}`).join('\n')}`);
     }
     // Instructions
-    sections.push(`
+    let instructions = `
 ## Instructions
 
 Your PRIMARY goal is to FIX the issue if possible. Follow these steps:
 
 1. **Investigate** - Read the files mentioned in the stack trace and find the bug
-2. **Fix it** - If you can identify the bug, USE THE EDIT TOOL to fix it immediately
-3. **Verify** - Check that your fix is correct and doesn't break anything
+2. **Fix it** - If you can identify the bug, USE THE EDIT TOOL to fix it immediately`;
+    if (testCommand) {
+        instructions += `
+3. **Run tests** - After making your fix, run: \`${testCommand}\`
+4. **Fix test failures** - If tests fail, analyze the output and fix the issues
+5. **Repeat** - Keep running tests until they pass`;
+    }
+    else {
+        instructions += `
+3. **Verify** - Check that your fix is correct and doesn't break anything`;
+    }
+    instructions += `
 
 ### What to fix:
 - Null/undefined checks
@@ -33593,7 +33823,14 @@ Your PRIMARY goal is to FIX the issue if possible. Follow these steps:
 - Missing validation
 
 ### IMPORTANT: You MUST use the Edit tool to make changes if you find a fixable bug.
-Do not just analyze - actually fix the code!
+Do not just analyze - actually fix the code!`;
+    if (testCommand) {
+        instructions += `
+
+### IMPORTANT: After fixing, run \`${testCommand}\` to verify your changes work.
+If tests fail, fix the issues and run again until all tests pass.`;
+    }
+    instructions += `
 
 ## If Not Fixable
 
@@ -33605,7 +33842,7 @@ Only if you cannot identify a code fix, provide analysis:
 ## Confidence Rating
 
 After your fix or analysis:
-- **high**: Bug found and fixed, or obvious issue identified
+- **high**: Bug found and fixed${testCommand ? ', tests passing' : ''}, or obvious issue identified
 - **medium**: Likely fix applied, should be reviewed
 - **low**: Uncertain, needs human investigation
 
@@ -33613,7 +33850,8 @@ After your fix or analysis:
 
 - Make minimal, safe changes
 - Do not modify protected paths
-- Ensure backward compatibility`);
+- Ensure backward compatibility`;
+    sections.push(instructions);
     return sections.join('\n');
 }
 /**
@@ -33644,6 +33882,63 @@ function getRunbookContent(alert, config) {
         }
     }
     return undefined;
+}
+/**
+ * Build prompt for responding to PR review comments
+ */
+function buildReviewPrompt(options) {
+    const { prNumber, prTitle, prBody, commentBody, changedFiles, testCommand } = options;
+    let prompt = `You are responding to a code review comment on PR #${prNumber}.
+
+## PR Information
+
+**Title:** ${prTitle}
+
+**Description:**
+${prBody}
+
+**Files changed in this PR:**
+${changedFiles.map(f => `- ${f}`).join('\n')}
+
+## Review Comment
+
+The reviewer has left the following feedback:
+
+> ${commentBody.split('\n').join('\n> ')}
+
+## Instructions
+
+Your task is to address the reviewer's feedback:
+
+1. **Understand** - Read the files mentioned and understand the current implementation
+2. **Address** - Make the changes requested by the reviewer
+3. **Fix** - USE THE EDIT TOOL to implement the changes`;
+    if (testCommand) {
+        prompt += `
+4. **Run tests** - After making changes, run: \`${testCommand}\`
+5. **Fix failures** - If tests fail, fix the issues and run again until they pass`;
+    }
+    prompt += `
+
+### IMPORTANT: You MUST use the Edit tool to make changes.
+Do not just analyze - actually fix the code based on the feedback!`;
+    if (testCommand) {
+        prompt += `
+
+### IMPORTANT: After making changes, run \`${testCommand}\` to verify your changes work.
+If tests fail, fix the issues and run again until all tests pass.`;
+    }
+    prompt += `
+
+### Guidelines
+
+- Make minimal, focused changes that address the specific feedback
+- Maintain consistency with existing code style
+- Ensure changes don't break existing functionality
+- If the request is unclear or not feasible, explain why
+
+After making changes, summarize what you did.`;
+    return prompt;
 }
 /**
  * Build a shorter analysis-only prompt

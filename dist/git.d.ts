@@ -34,3 +34,15 @@ export declare function discardChanges(): Promise<void>;
  * Configure git for commits in CI
  */
 export declare function configureGit(): Promise<void>;
+/**
+ * Fetch and checkout a PR branch
+ */
+export declare function checkoutPRBranch(prNumber: number): Promise<string>;
+/**
+ * Push changes to the PR branch
+ */
+export declare function pushToPRBranch(prNumber: number, remoteBranch: string): Promise<void>;
+/**
+ * Commit changes for a PR review response
+ */
+export declare function commitReviewChanges(commentSummary: string): Promise<boolean>;
