@@ -1,0 +1,125 @@
+name: Test oncall-agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      alert_type:
+        description: 'Type of test alert'
+        required: true
+        default: 'pagerduty'
+        type: choice
+        options:
+          - pagerduty
+          - datadog
+          - generic
+      mode:
+        description: 'Action mode'
+        required: true
+        default: 'analyze'
+        type: choice
+        options:
+          - analyze
+          - auto
+          - pr
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set test payload
+        id: payload
+        run: |
+          if [ "${{ inputs.alert_type }}" == "pagerduty" ]; then
+            echo 'ALERT_PAYLOAD<<EOF' >> $GITHUB_ENV
+            cat << 'PAYLOAD' >> $GITHUB_ENV
+          {
+            "event": {
+              "event_type": "incident.triggered",
+              "data": {
+                "id": "TEST-001",
+                "type": "incident",
+                "html_url": "https://example.pagerduty.com/incidents/TEST-001",
+                "number": 1,
+                "title": "Test Alert: High Error Rate",
+                "service": {
+                  "id": "PTEST",
+                  "name": "test-service"
+                },
+                "urgency": "high",
+                "created_at": "2024-01-15T10:30:00Z",
+                "body": {
+                  "details": {
+                    "error_message": "This is a test alert to validate oncall-agent",
+                    "environment": "test"
+                  }
+                }
+              }
+            }
+          }
+          PAYLOAD
+            echo 'EOF' >> $GITHUB_ENV
+          elif [ "${{ inputs.alert_type }}" == "datadog" ]; then
+            echo 'ALERT_PAYLOAD<<EOF' >> $GITHUB_ENV
+            cat << 'PAYLOAD' >> $GITHUB_ENV
+          {
+            "id": "test-datadog-001",
+            "title": "Test Datadog Alert: CPU Spike",
+            "text": "CPU usage exceeded threshold on test-server",
+            "date": 1705315800,
+            "priority": "normal",
+            "alert_type": "warning",
+            "tags": ["service:test-service", "env:test"]
+          }
+          PAYLOAD
+            echo 'EOF' >> $GITHUB_ENV
+          else
+            echo 'ALERT_PAYLOAD<<EOF' >> $GITHUB_ENV
+            cat << 'PAYLOAD' >> $GITHUB_ENV
+          {
+            "id": "generic-test-001",
+            "title": "Generic Test Alert",
+            "description": "This is a generic test alert for oncall-agent validation",
+            "severity": "warning",
+            "service": "test-service",
+            "timestamp": "2024-01-15T10:30:00Z"
+          }
+          PAYLOAD
+            echo 'EOF' >> $GITHUB_ENV
+          fi
+
+      - name: Run oncall-agent
+        uses: ./
+        id: oncall
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          alert_payload: ${{ env.ALERT_PAYLOAD }}
+          alert_source: ${{ inputs.alert_type }}
+          mode: ${{ inputs.mode }}
+          create_issue: 'true'
+          confidence_threshold: 'low'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Print results
+        run: |
+          echo "## oncall-agent Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Output | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Action Taken | ${{ steps.oncall.outputs.action_taken }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Issue Number | ${{ steps.oncall.outputs.issue_number }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| PR Number | ${{ steps.oncall.outputs.pr_number || 'N/A' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Confidence | ${{ steps.oncall.outputs.confidence }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.oncall.outputs.analysis }}" >> $GITHUB_STEP_SUMMARY
