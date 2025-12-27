@@ -16,11 +16,18 @@ export function multiply(a: number, b: number): number {
 }
 
 export function divide(a: number, b: number): number {
-  // BUG: Missing division by zero check causes crashes in production
+  if (b === 0) {
+    throw new Error('Division by zero is not allowed')
+  }
+  if (b < 0) {
+    throw new Error('Division by negative numbers is not allowed')
+  }
   return a / b
 }
 
 export function percentage(value: number, total: number): number {
-  // BUG: Also missing division by zero check
+  if (total === 0) {
+    throw new Error('Cannot calculate percentage with total of zero')
+  }
   return (value / total) * 100
 }
