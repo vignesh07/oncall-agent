@@ -110,16 +110,22 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Print results
+        env:
+          ACTION_TAKEN: ${{ steps.oncall.outputs.action_taken }}
+          ISSUE_NUMBER: ${{ steps.oncall.outputs.issue_number }}
+          PR_NUMBER: ${{ steps.oncall.outputs.pr_number }}
+          CONFIDENCE: ${{ steps.oncall.outputs.confidence }}
+          ANALYSIS: ${{ steps.oncall.outputs.analysis }}
         run: |
           echo "## oncall-agent Test Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Output | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Action Taken | ${{ steps.oncall.outputs.action_taken }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Issue Number | ${{ steps.oncall.outputs.issue_number }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| PR Number | ${{ steps.oncall.outputs.pr_number || 'N/A' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Confidence | ${{ steps.oncall.outputs.confidence }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Action Taken | ${ACTION_TAKEN} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Issue Number | ${ISSUE_NUMBER} |" >> $GITHUB_STEP_SUMMARY
+          echo "| PR Number | ${PR_NUMBER:-N/A} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Confidence | ${CONFIDENCE} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Analysis" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.oncall.outputs.analysis }}" >> $GITHUB_STEP_SUMMARY
+          echo "See issue #${ISSUE_NUMBER} for full analysis." >> $GITHUB_STEP_SUMMARY
