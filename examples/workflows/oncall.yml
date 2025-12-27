@@ -1,0 +1,42 @@
+# Basic oncall-agent workflow
+# Copy this file to .github/workflows/oncall.yml in your repository
+
+name: On-Call Agent
+
+on:
+  repository_dispatch:
+    types: [pagerduty-alert, datadog-alert, cloudwatch-alert, sentry-event, opsgenie-alert, prometheus-alert, alert]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  respond:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Respond to Alert
+        uses: vignesh07/oncall-agent@v1
+        id: oncall
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          alert_payload: ${{ toJson(github.event.client_payload) }}
+          alert_source: ${{ github.event.action }}
+
+      - name: Summary
+        run: |
+          echo "## oncall-agent Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Action:** ${{ steps.oncall.outputs.action_taken }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Confidence:** ${{ steps.oncall.outputs.confidence }}" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ steps.oncall.outputs.issue_number }}" ]; then
+            echo "**Issue:** #${{ steps.oncall.outputs.issue_number }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -n "${{ steps.oncall.outputs.pr_number }}" ]; then
+            echo "**PR:** #${{ steps.oncall.outputs.pr_number }}" >> $GITHUB_STEP_SUMMARY
+          fi

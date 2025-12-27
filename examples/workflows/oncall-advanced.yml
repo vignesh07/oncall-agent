@@ -1,0 +1,86 @@
+# Advanced oncall-agent workflow with all options
+# Copy this file to .github/workflows/oncall.yml in your repository
+
+name: On-Call Agent (Advanced)
+
+on:
+  repository_dispatch:
+    types: [pagerduty-alert, datadog-alert, cloudwatch-alert, sentry-event, opsgenie-alert, prometheus-alert, alert]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  respond:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Respond to Alert
+        uses: vignesh07/oncall-agent@v1
+        id: oncall
+        with:
+          # Required
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          alert_payload: ${{ toJson(github.event.client_payload) }}
+
+          # Optional: Source detection
+          alert_source: ${{ github.event.action }}  # auto, pagerduty, datadog, cloudwatch, sentry, opsgenie, prometheus, generic
+
+          # Optional: Operation mode
+          mode: auto  # auto, pr, analyze
+
+          # Optional: Issue creation
+          create_issue: 'true'
+
+          # Optional: PagerDuty integration
+          pagerduty_api_key: ${{ secrets.PAGERDUTY_API_KEY }}
+
+          # Optional: Confidence threshold for creating PRs
+          confidence_threshold: medium  # high, medium, low
+
+          # Optional: Timeout for Claude analysis
+          timeout_minutes: '10'
+
+          # Optional: Safety limit on file changes
+          max_files_changed: '10'
+
+      # Notify on Slack (optional)
+      - name: Notify Slack
+        if: always()
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "oncall-agent: ${{ steps.oncall.outputs.action_taken }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*oncall-agent Result*\n• Action: ${{ steps.oncall.outputs.action_taken }}\n• Confidence: ${{ steps.oncall.outputs.confidence }}\n• Issue: #${{ steps.oncall.outputs.issue_number }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Summary
+        run: |
+          echo "## oncall-agent Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Action | ${{ steps.oncall.outputs.action_taken }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Confidence | ${{ steps.oncall.outputs.confidence }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Issue | #${{ steps.oncall.outputs.issue_number }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| PR | ${{ steps.oncall.outputs.pr_number || 'N/A' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.oncall.outputs.analysis }}" >> $GITHUB_STEP_SUMMARY

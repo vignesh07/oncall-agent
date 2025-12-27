@@ -1,0 +1,42 @@
+# oncall-agent configuration
+# Copy this file to .oncall-agent/config.yml in your repository
+
+# Services this repository is responsible for
+# oncall-agent will only respond to alerts for these services
+services:
+  - user-service
+  - auth-service
+  - payment-service
+
+# Paths that should never be modified by oncall-agent
+# Use glob patterns
+protected_paths:
+  - src/core/security/**
+  - migrations/**
+  - "**/*.lock"
+  - .github/**
+
+# Additional context to include in prompts
+# Helps Claude understand your codebase
+context: |
+  This is a Node.js monorepo using TypeScript.
+  We use PostgreSQL for persistence and Redis for caching.
+  Feature flags are in src/config/flags.ts.
+  Environment variables are loaded from .env files.
+
+# Runbook mappings
+# Maps alert patterns to runbook files for additional context
+runbooks:
+  high-memory: docs/runbooks/high-memory.md
+  database-connection: docs/runbooks/db-connections.md
+  timeout: docs/runbooks/timeouts.md
+  rate-limit: docs/runbooks/rate-limiting.md
+
+# Deduplication settings
+deduplication:
+  # Enable/disable duplicate detection
+  enabled: true
+  # Minimum similarity score (0.0 - 1.0) to consider as duplicate
+  similarity_threshold: 0.7
+  # Only check issues created within this time window
+  lookback_hours: 24
