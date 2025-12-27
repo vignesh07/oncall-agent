@@ -1,7 +1,7 @@
 import * as core from '@actions/core'
-import * as exec from '@actions/exec'
 import * as fs from 'fs'
 import * as path from 'path'
+import { spawn } from 'child_process'
 import type { Confidence } from './types'
 
 export interface ClaudeResult {
@@ -35,10 +35,6 @@ export async function runClaudeCode(
   const { timeoutMinutes, maxFilesChanged, workingDirectory } = options
   const cwd = workingDirectory || process.cwd()
 
-  // Write prompt to a file to avoid shell escaping issues
-  const promptFile = path.join(cwd, '.oncall-agent-prompt.md')
-  fs.writeFileSync(promptFile, prompt)
-
   let stdout = ''
   let stderr = ''
 
@@ -46,57 +42,42 @@ export async function runClaudeCode(
     core.info('Installing Claude Code CLI...')
 
     // Install Claude Code CLI globally
-    await exec.exec('npm', ['install', '-g', '@anthropic-ai/claude-code'], {
-      silent: true,
-      ignoreReturnCode: true
-    })
+    await execCommand('npm', ['install', '-g', '@anthropic-ai/claude-code'], { cwd, silent: true })
 
     core.info('Running Claude Code analysis...')
 
-    // Build the command arguments
-    // -p: print mode (non-interactive)
-    // --output-format json: structured output
-    // --verbose: for debugging
-    // --allowedTools: specify which tools Claude can use
-    const args = [
-      '-p',  // Print mode (non-interactive)
-      '--output-format', 'json',
-      '--max-turns', '10',
-      // Allow read-only tools for analysis, plus Edit for fixes
-      '--allowedTools', 'Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash',
-      prompt  // The prompt is the last argument
-    ]
+    // Write prompt to file to avoid argument length issues
+    const promptFile = path.join(cwd, '.oncall-prompt.txt')
+    fs.writeFileSync(promptFile, prompt)
 
-    core.info(`Executing: claude ${args.slice(0, 5).join(' ')} ...`)
-
-    const exitCode = await exec.exec('claude', args, {
+    // Run claude with prompt from stdin
+    // Using -p for print mode (non-interactive)
+    // Using --output-format json for structured output
+    const result = await runClaudeWithStdin(prompt, {
       cwd,
+      timeoutMs: timeoutMinutes * 60 * 1000,
       env: {
         ...process.env,
         ANTHROPIC_API_KEY: core.getInput('anthropic_api_key'),
         CI: 'true',
         TERM: 'dumb'
-      },
-      silent: false,
-      listeners: {
-        stdout: (data: Buffer) => {
-          stdout += data.toString()
-        },
-        stderr: (data: Buffer) => {
-          stderr += data.toString()
-        }
-      },
-      ignoreReturnCode: true
+      }
     })
 
-    // Clean up prompt file
+    stdout = result.stdout
+    stderr = result.stderr
+    const exitCode = result.exitCode
+
+    // Clean up
     if (fs.existsSync(promptFile)) {
       fs.unlinkSync(promptFile)
     }
 
     core.info(`Claude exited with code ${exitCode}`)
-    core.debug(`stdout length: ${stdout.length}`)
-    core.debug(`stderr length: ${stderr.length}`)
+    core.info(`stdout length: ${stdout.length}`)
+    if (stderr) {
+      core.info(`stderr: ${stderr.substring(0, 500)}`)
+    }
 
     // Parse Claude's output
     let claudeOutput: ClaudeJsonOutput = {}
@@ -128,8 +109,8 @@ export async function runClaudeCode(
     // Check file count limit
     if (changedFiles.length > maxFilesChanged) {
       core.warning(`Claude modified ${changedFiles.length} files, exceeding limit of ${maxFilesChanged}`)
-      await exec.exec('git', ['checkout', '.'], { cwd, silent: true })
-      await exec.exec('git', ['clean', '-fd'], { cwd, silent: true })
+      await execCommand('git', ['checkout', '.'], { cwd, silent: true })
+      await execCommand('git', ['clean', '-fd'], { cwd, silent: true })
       return {
         success: false,
         analysis: `Claude attempted to modify ${changedFiles.length} files, which exceeds the safety limit of ${maxFilesChanged}. Changes were reverted.`,
@@ -156,11 +137,6 @@ export async function runClaudeCode(
     }
 
   } catch (error) {
-    // Clean up prompt file on error
-    if (fs.existsSync(promptFile)) {
-      fs.unlinkSync(promptFile)
-    }
-
     const message = error instanceof Error ? error.message : String(error)
     core.error(`Claude Code failed: ${message}`)
 
@@ -176,43 +152,121 @@ export async function runClaudeCode(
 }
 
 /**
+ * Run Claude CLI with prompt via stdin
+ */
+function runClaudeWithStdin(
+  prompt: string,
+  options: {
+    cwd: string
+    timeoutMs: number
+    env: NodeJS.ProcessEnv
+  }
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  return new Promise((resolve, reject) => {
+    const args = ['-p', '--output-format', 'json']
+
+    core.info(`Executing: claude ${args.join(' ')} (with prompt via stdin)`)
+
+    const child = spawn('claude', args, {
+      cwd: options.cwd,
+      env: options.env,
+      stdio: ['pipe', 'pipe', 'pipe']
+    })
+
+    let stdout = ''
+    let stderr = ''
+
+    child.stdout.on('data', (data) => {
+      const text = data.toString()
+      stdout += text
+      // Log progress
+      if (text.includes('Tool:') || text.includes('Result:')) {
+        core.info(text.substring(0, 200))
+      }
+    })
+
+    child.stderr.on('data', (data) => {
+      stderr += data.toString()
+    })
+
+    child.on('error', (error) => {
+      reject(error)
+    })
+
+    child.on('close', (code) => {
+      resolve({
+        stdout,
+        stderr,
+        exitCode: code ?? 1
+      })
+    })
+
+    // Set timeout
+    const timeout = setTimeout(() => {
+      child.kill('SIGTERM')
+      reject(new Error(`Claude Code timed out after ${options.timeoutMs / 1000} seconds`))
+    }, options.timeoutMs)
+
+    child.on('close', () => {
+      clearTimeout(timeout)
+    })
+
+    // Write prompt to stdin and close
+    child.stdin.write(prompt)
+    child.stdin.end()
+  })
+}
+
+/**
+ * Execute a command and return the result
+ */
+function execCommand(
+  cmd: string,
+  args: string[],
+  options: { cwd: string; silent?: boolean }
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, {
+      cwd: options.cwd,
+      stdio: options.silent ? 'pipe' : 'inherit'
+    })
+
+    let stdout = ''
+    let stderr = ''
+
+    if (options.silent && child.stdout) {
+      child.stdout.on('data', (data) => {
+        stdout += data.toString()
+      })
+    }
+    if (options.silent && child.stderr) {
+      child.stderr.on('data', (data) => {
+        stderr += data.toString()
+      })
+    }
+
+    child.on('error', reject)
+    child.on('close', (code) => {
+      resolve({ stdout, stderr, exitCode: code ?? 1 })
+    })
+  })
+}
+
+/**
  * Get list of files changed by Claude
  */
 async function getChangedFiles(cwd: string): Promise<string[]> {
-  let output = ''
-  let untracked = ''
-
   try {
-    await exec.exec('git', ['diff', '--name-only'], {
-      cwd,
-      silent: true,
-      listeners: {
-        stdout: (data: Buffer) => {
-          output += data.toString()
-        }
-      },
-      ignoreReturnCode: true
-    })
+    const diffResult = await execCommand('git', ['diff', '--name-only'], { cwd, silent: true })
+    const untrackedResult = await execCommand('git', ['ls-files', '--others', '--exclude-standard'], { cwd, silent: true })
 
-    await exec.exec('git', ['ls-files', '--others', '--exclude-standard'], {
-      cwd,
-      silent: true,
-      listeners: {
-        stdout: (data: Buffer) => {
-          untracked += data.toString()
-        }
-      },
-      ignoreReturnCode: true
-    })
+    const modified = diffResult.stdout.trim().split('\n').filter(Boolean)
+    const newFiles = untrackedResult.stdout.trim().split('\n').filter(Boolean)
+
+    return [...modified, ...newFiles]
   } catch {
-    // Git commands failed, likely not a git repo
     return []
   }
-
-  const modified = output.trim().split('\n').filter(Boolean)
-  const newFiles = untracked.trim().split('\n').filter(Boolean)
-
-  return [...modified, ...newFiles]
 }
 
 /**
