@@ -31795,10 +31795,10 @@ async function findDuplicates(alert, octokit, config) {
     // Calculate the since date
     const since = new Date();
     since.setHours(since.getHours() - lookbackHours);
-    // Fetch recent issues with oncall-agent label
+    // Fetch recent OPEN issues with oncall-agent label
     const recentIssues = await (0, github_1.listRecentIssues)(octokit, {
         labels: ['oncall-agent'],
-        state: 'all',
+        state: 'open',
         since: since.toISOString(),
         perPage: 50
     });
@@ -31826,7 +31826,7 @@ async function isAlertProcessed(alert, octokit) {
     // Search for issues with the exact alert ID in the title or body
     const recentIssues = await (0, github_1.listRecentIssues)(octokit, {
         labels: ['oncall-agent'],
-        state: 'all',
+        state: 'open',
         perPage: 100
     });
     for (const issue of recentIssues) {

@@ -99,10 +99,10 @@ export async function findDuplicates(
   const since = new Date()
   since.setHours(since.getHours() - lookbackHours)
 
-  // Fetch recent issues with oncall-agent label
+  // Fetch recent OPEN issues with oncall-agent label
   const recentIssues = await listRecentIssues(octokit, {
     labels: ['oncall-agent'],
-    state: 'all',
+    state: 'open',
     since: since.toISOString(),
     perPage: 50
   })
@@ -139,7 +139,7 @@ export async function isAlertProcessed(
   // Search for issues with the exact alert ID in the title or body
   const recentIssues = await listRecentIssues(octokit, {
     labels: ['oncall-agent'],
-    state: 'all',
+    state: 'open',
     perPage: 100
   })
 
