@@ -33572,35 +33572,41 @@ ${config.protectedPaths.map(p => `- ${p}`).join('\n')}`);
     sections.push(`
 ## Instructions
 
-1. **Analyze** the alert and identify the root cause
-2. **Investigate** the codebase to find related code
-3. **Assess** whether this is fixable via code change:
-   - Config changes (timeouts, limits, feature flags)
-   - Bug fixes (null checks, error handling, logic errors)
-   - Resource adjustments (memory limits, pool sizes)
-4. **If fixable:** Make the fix. Be conservative - prefer safe, minimal changes.
-5. **If not fixable via code:** Document your analysis including:
-   - What you investigated
-   - Possible causes
-   - Recommended actions for humans
-   - What additional information would help
+Your PRIMARY goal is to FIX the issue if possible. Follow these steps:
+
+1. **Investigate** - Read the files mentioned in the stack trace and find the bug
+2. **Fix it** - If you can identify the bug, USE THE EDIT TOOL to fix it immediately
+3. **Verify** - Check that your fix is correct and doesn't break anything
+
+### What to fix:
+- Null/undefined checks
+- Division by zero checks
+- Error handling
+- Logic errors
+- Missing validation
+
+### IMPORTANT: You MUST use the Edit tool to make changes if you find a fixable bug.
+Do not just analyze - actually fix the code!
+
+## If Not Fixable
+
+Only if you cannot identify a code fix, provide analysis:
+- What you investigated
+- Possible causes
+- Recommended actions
 
 ## Confidence Rating
 
-After your analysis, rate your confidence:
-- **high**: Stack trace points directly to bug, fix is obvious and safe
-- **medium**: Likely cause identified, fix is reasonable but should be reviewed carefully
-- **low**: Uncertain about cause or fix, needs human investigation
+After your fix or analysis:
+- **high**: Bug found and fixed, or obvious issue identified
+- **medium**: Likely fix applied, should be reviewed
+- **low**: Uncertain, needs human investigation
 
-Always explain your reasoning for the confidence level.
+## Guidelines
 
-## Important Guidelines
-
-- Be conservative. Prefer safe, minimal changes over comprehensive refactoring.
-- Do not modify protected paths.
-- If you make changes, ensure they are backward compatible.
-- Run tests if available to verify your fix.
-- If unsure, err on the side of providing analysis rather than making changes.`);
+- Make minimal, safe changes
+- Do not modify protected paths
+- Ensure backward compatibility`);
     return sections.join('\n');
 }
 /**
