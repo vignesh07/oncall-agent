@@ -1,0 +1,14 @@
+{
+  "id": "evt-12345",
+  "title": "High CPU Usage on web-server-01",
+  "text": "CPU usage has exceeded 90% for the past 5 minutes.\n\n```\nProcess: node\nPID: 1234\nCPU: 95%\n```",
+  "date": 1705315800,
+  "priority": "normal",
+  "alert_type": "warning",
+  "tags": [
+    "service:web-frontend",
+    "env:production",
+    "team:platform"
+  ],
+  "url": "https://app.datadoghq.com/event/12345"
+}

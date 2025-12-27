@@ -1,0 +1,38 @@
+{
+  "version": "4",
+  "groupKey": "alertname:HighMemoryUsage",
+  "status": "firing",
+  "receiver": "oncall-webhook",
+  "groupLabels": {
+    "alertname": "HighMemoryUsage"
+  },
+  "commonLabels": {
+    "alertname": "HighMemoryUsage",
+    "severity": "warning",
+    "job": "kubernetes-pods"
+  },
+  "commonAnnotations": {
+    "summary": "High memory usage detected",
+    "description": "Memory usage is above 80% on pod api-server-abc123"
+  },
+  "externalURL": "https://alertmanager.example.com",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "HighMemoryUsage",
+        "severity": "warning",
+        "job": "kubernetes-pods",
+        "namespace": "production",
+        "pod": "api-server-abc123",
+        "service": "api-server"
+      },
+      "annotations": {
+        "summary": "High memory usage detected",
+        "description": "Memory usage is above 80% on pod api-server-abc123"
+      },
+      "startsAt": "2024-01-15T10:30:00.000Z",
+      "generatorURL": "https://prometheus.example.com/graph?g0.expr=container_memory_usage_bytes"
+    }
+  ]
+}

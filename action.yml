@@ -1,0 +1,73 @@
+name: 'oncall-agent'
+description: 'AI-powered on-call agent that responds to production alerts with analysis and fixes'
+author: 'vignesh07'
+
+branding:
+  icon: 'alert-circle'
+  color: 'orange'
+
+inputs:
+  anthropic_api_key:
+    description: 'Anthropic API key for Claude'
+    required: true
+
+  alert_payload:
+    description: 'JSON alert payload from webhook'
+    required: true
+
+  alert_source:
+    description: 'Source of alert (pagerduty, datadog, cloudwatch, sentry, opsgenie, prometheus, generic, auto)'
+    required: false
+    default: 'auto'
+
+  mode:
+    description: 'Operation mode: pr = attempt fix, analyze = comment only, auto = decide based on context'
+    required: false
+    default: 'auto'
+
+  create_issue:
+    description: 'Create GitHub issue to track the alert'
+    required: false
+    default: 'true'
+
+  pagerduty_api_key:
+    description: 'PagerDuty API key for updating incidents (optional)'
+    required: false
+
+  confidence_threshold:
+    description: 'Minimum confidence to create PR (high, medium, low)'
+    required: false
+    default: 'medium'
+
+  timeout_minutes:
+    description: 'Maximum time for Claude to work (minutes)'
+    required: false
+    default: '10'
+
+  max_files_changed:
+    description: 'Maximum number of files Claude can modify in a fix'
+    required: false
+    default: '10'
+
+outputs:
+  action_taken:
+    description: 'What the agent did: pr_created, analysis_only, duplicate, error'
+
+  pr_number:
+    description: 'Pull request number if created'
+
+  issue_number:
+    description: 'GitHub issue number for tracking'
+
+  analysis:
+    description: 'Agent analysis summary'
+
+  confidence:
+    description: 'Agent confidence in the fix: high, medium, low'
+
+  duplicate_of:
+    description: 'Issue number if this alert was detected as a duplicate'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'

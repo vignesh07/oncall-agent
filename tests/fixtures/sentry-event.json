@@ -1,0 +1,48 @@
+{
+  "action": "triggered",
+  "data": {
+    "event": {
+      "event_id": "abc123def456",
+      "title": "TypeError: Cannot read property 'id' of undefined",
+      "message": "Cannot read property 'id' of undefined",
+      "level": "error",
+      "platform": "javascript",
+      "timestamp": 1705315800,
+      "tags": [
+        {"key": "browser", "value": "Chrome 120"},
+        {"key": "environment", "value": "production"}
+      ],
+      "exception": {
+        "values": [
+          {
+            "type": "TypeError",
+            "value": "Cannot read property 'id' of undefined",
+            "stacktrace": {
+              "frames": [
+                {
+                  "filename": "app.js",
+                  "function": "getUserData",
+                  "lineno": 142
+                },
+                {
+                  "filename": "api.js",
+                  "function": "fetchUser",
+                  "lineno": 56
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "issue": {
+      "id": "12345",
+      "title": "TypeError: Cannot read property 'id' of undefined",
+      "shortId": "PROJ-123",
+      "project": {
+        "slug": "web-app",
+        "name": "Web Application"
+      }
+    }
+  }
+}

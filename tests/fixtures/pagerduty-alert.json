@@ -1,0 +1,29 @@
+{
+  "event": {
+    "event_type": "incident.triggered",
+    "data": {
+      "id": "P123ABC",
+      "type": "incident",
+      "self": "https://api.pagerduty.com/incidents/P123ABC",
+      "html_url": "https://example.pagerduty.com/incidents/P123ABC",
+      "number": 42,
+      "title": "High Error Rate on user-service",
+      "service": {
+        "id": "PSERVICE1",
+        "name": "user-service"
+      },
+      "urgency": "high",
+      "created_at": "2024-01-15T10:30:00Z",
+      "body": {
+        "details": {
+          "error_message": "NullPointerException in UserController.getUser()",
+          "stack_trace": "java.lang.NullPointerException\n    at com.example.UserController.getUser(UserController.java:42)\n    at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)",
+          "environment": "production"
+        }
+      },
+      "custom_fields": {
+        "team": "backend"
+      }
+    }
+  }
+}

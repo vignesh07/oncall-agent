@@ -1,0 +1,7 @@
+{
+  "Type": "Notification",
+  "MessageId": "12345-abcde",
+  "TopicArn": "arn:aws:sns:us-east-1:123456789:alerts",
+  "Timestamp": "2024-01-15T10:30:00.000Z",
+  "Message": "{\"AlarmName\":\"HighLatency-API\",\"AlarmDescription\":\"API latency exceeds 500ms\",\"NewStateValue\":\"ALARM\",\"NewStateReason\":\"Threshold Crossed: 1 datapoint (750.0) was greater than the threshold (500.0).\",\"StateChangeTime\":\"2024-01-15T10:30:00.000Z\",\"Region\":\"us-east-1\",\"AWSAccountId\":\"123456789012\",\"Trigger\":{\"MetricName\":\"Latency\",\"Namespace\":\"AWS/ApiGateway\",\"Statistic\":\"Average\",\"Period\":60,\"EvaluationPeriods\":1,\"Threshold\":500,\"Dimensions\":[{\"name\":\"ApiName\",\"value\":\"ProductAPI\"},{\"name\":\"Stage\",\"value\":\"prod\"}]}}"
+}
