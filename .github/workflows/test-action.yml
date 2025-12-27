@@ -6,16 +6,17 @@ on:
       alert_type:
         description: 'Type of test alert'
         required: true
-        default: 'pagerduty'
+        default: 'fixable-bug'
         type: choice
         options:
+          - fixable-bug
           - pagerduty
           - datadog
           - generic
       mode:
         description: 'Action mode'
         required: true
-        default: 'analyze'
+        default: 'pr'
         type: choice
         options:
           - analyze
@@ -38,7 +39,21 @@ jobs:
       - name: Set test payload
         id: payload
         run: |
-          if [ "${{ inputs.alert_type }}" == "pagerduty" ]; then
+          if [ "${{ inputs.alert_type }}" == "fixable-bug" ]; then
+            echo 'ALERT_PAYLOAD<<EOF' >> $GITHUB_ENV
+            cat << 'PAYLOAD' >> $GITHUB_ENV
+          {
+            "id": "DIV-ZERO-001",
+            "title": "Production crash: Division by zero in calculator.ts",
+            "description": "Application crashed with 'Infinity' result when calculating percentage with total=0. Stack trace shows the error originates from src/utils/calculator.ts in the divide() and percentage() functions. These functions do not check for division by zero before performing the operation. Please add proper validation to prevent division by zero errors.",
+            "severity": "critical",
+            "service": "calculator-service",
+            "timestamp": "2024-01-15T10:30:00Z",
+            "stackTrace": "Error: Invalid result Infinity\n    at percentage (src/utils/calculator.ts:25:10)\n    at calculateStats (src/stats.ts:42:15)\n    at processData (src/main.ts:88:22)"
+          }
+          PAYLOAD
+            echo 'EOF' >> $GITHUB_ENV
+          elif [ "${{ inputs.alert_type }}" == "pagerduty" ]; then
             echo 'ALERT_PAYLOAD<<EOF' >> $GITHUB_ENV
             cat << 'PAYLOAD' >> $GITHUB_ENV
           {
