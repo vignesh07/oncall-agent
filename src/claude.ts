@@ -35,12 +35,9 @@ export async function runClaudeCode(
   const { timeoutMinutes, maxFilesChanged, workingDirectory } = options
   const cwd = workingDirectory || process.cwd()
 
-  // Write prompt to temp file (avoids shell escaping issues)
+  // Write prompt to a file to avoid shell escaping issues
   const promptFile = path.join(cwd, '.oncall-agent-prompt.md')
   fs.writeFileSync(promptFile, prompt)
-
-  // Get list of files before Claude runs (to detect changes)
-  const filesBefore = await getTrackedFiles(cwd)
 
   let stdout = ''
   let stderr = ''
@@ -48,78 +45,91 @@ export async function runClaudeCode(
   try {
     core.info('Installing Claude Code CLI...')
 
-    // Install Claude Code CLI
+    // Install Claude Code CLI globally
     await exec.exec('npm', ['install', '-g', '@anthropic-ai/claude-code'], {
-      silent: true
+      silent: true,
+      ignoreReturnCode: true
     })
 
     core.info('Running Claude Code analysis...')
 
-    // Run Claude Code with the prompt
-    // --print: non-interactive mode
+    // Build the command arguments
+    // -p: print mode (non-interactive)
     // --output-format json: structured output
-    // --max-turns: limit iterations
-    // --dangerously-skip-permissions: required for CI (no TTY)
-    const exitCode = await exec.exec(
-      'claude',
-      [
-        '--print',
-        '--output-format', 'json',
-        '--max-turns', '20',
-        '--dangerously-skip-permissions',
-        prompt
-      ],
-      {
-        cwd,
-        env: {
-          ...process.env,
-          ANTHROPIC_API_KEY: core.getInput('anthropic_api_key'),
-          // Disable interactive features
-          CI: 'true',
-          TERM: 'dumb'
+    // --verbose: for debugging
+    // --allowedTools: specify which tools Claude can use
+    const args = [
+      '-p',  // Print mode (non-interactive)
+      '--output-format', 'json',
+      '--max-turns', '10',
+      // Allow read-only tools for analysis, plus Edit for fixes
+      '--allowedTools', 'Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash',
+      prompt  // The prompt is the last argument
+    ]
+
+    core.info(`Executing: claude ${args.slice(0, 5).join(' ')} ...`)
+
+    const exitCode = await exec.exec('claude', args, {
+      cwd,
+      env: {
+        ...process.env,
+        ANTHROPIC_API_KEY: core.getInput('anthropic_api_key'),
+        CI: 'true',
+        TERM: 'dumb'
+      },
+      silent: false,
+      listeners: {
+        stdout: (data: Buffer) => {
+          stdout += data.toString()
         },
-        silent: false,
-        listeners: {
-          stdout: (data: Buffer) => {
-            stdout += data.toString()
-          },
-          stderr: (data: Buffer) => {
-            stderr += data.toString()
-          }
-        },
-        ignoreReturnCode: true
-      }
-    )
+        stderr: (data: Buffer) => {
+          stderr += data.toString()
+        }
+      },
+      ignoreReturnCode: true
+    })
 
     // Clean up prompt file
     if (fs.existsSync(promptFile)) {
       fs.unlinkSync(promptFile)
     }
 
+    core.info(`Claude exited with code ${exitCode}`)
+    core.debug(`stdout length: ${stdout.length}`)
+    core.debug(`stderr length: ${stderr.length}`)
+
     // Parse Claude's output
     let claudeOutput: ClaudeJsonOutput = {}
+    let analysisText = ''
+
     try {
-      // Find JSON in output (may have other text around it)
+      // Try to parse as JSON
       const jsonMatch = stdout.match(/\{[\s\S]*\}/)
       if (jsonMatch) {
         claudeOutput = JSON.parse(jsonMatch[0])
+        analysisText = claudeOutput.result || ''
       }
     } catch {
-      core.debug('Could not parse Claude output as JSON')
+      core.debug('Could not parse Claude output as JSON, using raw output')
+      analysisText = stdout
     }
 
-    // Check for changes
-    const filesAfter = await getTrackedFiles(cwd)
-    const changedFiles = await getChangedFiles(cwd)
+    // If no analysis from JSON, use stdout
+    if (!analysisText) {
+      analysisText = stdout || stderr || 'No analysis output received'
+    }
 
-    // Determine if we have meaningful changes
+    // Check for file changes
+    const changedFiles = await getChangedFiles(cwd)
     const hasChanges = changedFiles.length > 0
+
+    core.info(`Changed files: ${changedFiles.length}`)
 
     // Check file count limit
     if (changedFiles.length > maxFilesChanged) {
       core.warning(`Claude modified ${changedFiles.length} files, exceeding limit of ${maxFilesChanged}`)
-      // Revert changes
       await exec.exec('git', ['checkout', '.'], { cwd, silent: true })
+      await exec.exec('git', ['clean', '-fd'], { cwd, silent: true })
       return {
         success: false,
         analysis: `Claude attempted to modify ${changedFiles.length} files, which exceeds the safety limit of ${maxFilesChanged}. Changes were reverted.`,
@@ -130,29 +140,19 @@ export async function runClaudeCode(
       }
     }
 
-    // Extract analysis from Claude's response
-    const analysis = claudeOutput.result || stdout || 'No analysis available'
+    // Determine confidence
+    const confidence = extractConfidence(analysisText)
 
-    // Determine confidence from the analysis
-    const confidence = extractConfidence(analysis)
-
-    if (exitCode !== 0 && !hasChanges) {
-      return {
-        success: false,
-        analysis: stderr || analysis,
-        confidence: 'low',
-        hasChanges: false,
-        changedFiles: [],
-        error: `Claude exited with code ${exitCode}`
-      }
-    }
+    // Consider it a success if we got output, even with non-zero exit
+    const success = analysisText.length > 50 || hasChanges
 
     return {
-      success: true,
-      analysis,
+      success,
+      analysis: analysisText,
       confidence,
       hasChanges,
-      changedFiles
+      changedFiles,
+      error: exitCode !== 0 ? `Exit code: ${exitCode}` : undefined
     }
 
   } catch (error) {
@@ -166,7 +166,7 @@ export async function runClaudeCode(
 
     return {
       success: false,
-      analysis: `Claude Code execution failed: ${message}`,
+      analysis: `Claude Code execution failed: ${message}\n\nStdout: ${stdout}\n\nStderr: ${stderr}`,
       confidence: 'low',
       hasChanges: false,
       changedFiles: [],
@@ -176,50 +176,38 @@ export async function runClaudeCode(
 }
 
 /**
- * Get list of tracked files in git
- */
-async function getTrackedFiles(cwd: string): Promise<Set<string>> {
-  let output = ''
-  await exec.exec('git', ['ls-files'], {
-    cwd,
-    silent: true,
-    listeners: {
-      stdout: (data: Buffer) => {
-        output += data.toString()
-      }
-    }
-  })
-  return new Set(output.trim().split('\n').filter(Boolean))
-}
-
-/**
  * Get list of files changed by Claude
  */
 async function getChangedFiles(cwd: string): Promise<string[]> {
   let output = ''
-
-  // Get modified files
-  await exec.exec('git', ['diff', '--name-only'], {
-    cwd,
-    silent: true,
-    listeners: {
-      stdout: (data: Buffer) => {
-        output += data.toString()
-      }
-    }
-  })
-
-  // Also get untracked files
   let untracked = ''
-  await exec.exec('git', ['ls-files', '--others', '--exclude-standard'], {
-    cwd,
-    silent: true,
-    listeners: {
-      stdout: (data: Buffer) => {
-        untracked += data.toString()
-      }
-    }
-  })
+
+  try {
+    await exec.exec('git', ['diff', '--name-only'], {
+      cwd,
+      silent: true,
+      listeners: {
+        stdout: (data: Buffer) => {
+          output += data.toString()
+        }
+      },
+      ignoreReturnCode: true
+    })
+
+    await exec.exec('git', ['ls-files', '--others', '--exclude-standard'], {
+      cwd,
+      silent: true,
+      listeners: {
+        stdout: (data: Buffer) => {
+          untracked += data.toString()
+        }
+      },
+      ignoreReturnCode: true
+    })
+  } catch {
+    // Git commands failed, likely not a git repo
+    return []
+  }
 
   const modified = output.trim().split('\n').filter(Boolean)
   const newFiles = untracked.trim().split('\n').filter(Boolean)
@@ -271,7 +259,6 @@ function extractConfidence(analysis: string): Confidence {
     if (lower.includes(indicator)) return 'low'
   }
 
-  // Default to medium
   return 'medium'
 }
 
