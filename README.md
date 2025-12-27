@@ -11,6 +11,12 @@ When an alert fires from PagerDuty, Datadog, CloudWatch, Sentry, Opsgenie, or Pr
 5. Either creates a PR with a fix, or posts an analysis comment
 6. Updates the source system (e.g., adds a note to PagerDuty)
 
+## Requirements
+
+- **Anthropic API key** - Get one at [console.anthropic.com](https://console.anthropic.com)
+- **GitHub repository** - Where your code lives
+- **Webhook forwarder** - To send alerts to GitHub (see setup guides)
+
 ## Features
 
 - **Multi-source support**: PagerDuty, Datadog, CloudWatch, Sentry, Opsgenie, Prometheus
@@ -22,7 +28,17 @@ When an alert fires from PagerDuty, Datadog, CloudWatch, Sentry, Opsgenie, or Pr
 
 ## Quick Start
 
-### 1. Add the workflow
+### Option A: One-line Setup
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/vignesh07/oncall-agent/main/setup.sh | bash
+```
+
+This downloads the workflow files and creates a config template.
+
+### Option B: Manual Setup
+
+#### 1. Add the workflow
 
 Create `.github/workflows/oncall.yml`:
 
@@ -54,13 +70,17 @@ jobs:
           draft_pr: 'false'
 ```
 
-### 2. Add your API key
+#### 2. Add your API key
 
 Go to **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
 
 Add `ANTHROPIC_API_KEY` with your Anthropic API key.
 
-### 3. Configure webhook forwarding
+#### 3. Enable PR creation permission
+
+Go to **Settings** → **Actions** → **General** → Check **"Allow GitHub Actions to create and approve pull requests"**
+
+#### 4. Configure webhook forwarding
 
 See [Webhook Setup Guides](./examples/webhook-setup/) for your alert source:
 - [PagerDuty](./examples/webhook-setup/pagerduty.md)
