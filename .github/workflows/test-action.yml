@@ -117,7 +117,7 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           alert_payload: ${{ env.ALERT_PAYLOAD }}
-          alert_source: ${{ inputs.alert_type }}
+          alert_source: ${{ inputs.alert_type == 'fixable-bug' && 'generic' || inputs.alert_type }}
           mode: ${{ inputs.mode }}
           create_issue: 'true'
           confidence_threshold: 'low'
