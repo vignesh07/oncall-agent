@@ -31078,7 +31078,14 @@ async function runClaudeCode(prompt, options) {
  */
 function runClaudeWithStdin(prompt, options) {
     return new Promise((resolve, reject) => {
-        const args = ['-p', '--output-format', 'json'];
+        // -p: print mode (non-interactive)
+        // --output-format json: structured output
+        // --allowedTools: explicitly allow file operations
+        const args = [
+            '-p',
+            '--output-format', 'json',
+            '--allowedTools', 'Read,Glob,Grep,Edit,Write,Bash'
+        ];
         core.info(`Executing: claude ${args.join(' ')} (with prompt via stdin)`);
         const child = (0, child_process_1.spawn)('claude', args, {
             cwd: options.cwd,
