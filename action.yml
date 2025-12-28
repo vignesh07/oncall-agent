@@ -1,4 +1,4 @@
-name: 'oncall-agent'
+name: 'claude-on-call'
 description: 'AI-powered on-call agent that responds to production alerts with analysis and fixes'
 author: 'vignesh07'
 
