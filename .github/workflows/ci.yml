@@ -32,4 +32,5 @@ jobs:
 
       - name: Verify dist is up to date
         run: |
-          git diff --exit-code dist/ || (echo "dist/ is out of date. Run 'npm run build' and commit." && exit 1)
+          # Ignore source map files as they contain machine-specific paths
+          git diff --exit-code -- dist/*.js dist/*.ts || (echo "dist/ is out of date. Run 'npm run build' and commit." && exit 1)
