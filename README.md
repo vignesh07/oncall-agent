@@ -23,6 +23,7 @@ When an alert fires from PagerDuty, Datadog, CloudWatch, Sentry, Opsgenie, or Pr
 - **Automatic fixes**: Claude analyzes code and creates PRs with fixes
 - **Test integration**: Run tests after fixes to verify they work
 - **PR review mode**: Respond to PR comments and push updates
+- **Slack notifications**: Get notified when oncall-agent responds
 - **Deduplication**: Prevents duplicate issues for similar alerts
 - **Safety first**: Never auto-merges, configurable protected paths
 
@@ -243,6 +244,39 @@ deduplication:
 - **Deduplication**: Prevents alert spam
 - **Timeout limits**: Bounded execution time
 - **Test verification**: Run tests before creating PRs
+
+## Slack Notifications
+
+Get notified in Slack when oncall-agent responds to an alert. Add this step to your workflow:
+
+```yaml
+- name: Notify Slack
+  if: always()
+  uses: slackapi/slack-github-action@v1
+  with:
+    payload: |
+      {
+        "text": "oncall-agent responded to alert",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "*oncall-agent*\n• Action: ${{ steps.oncall.outputs.action_taken }}\n• Confidence: ${{ steps.oncall.outputs.confidence }}\n• <https://github.com/${{ github.repository }}/issues/${{ steps.oncall.outputs.issue_number }}|Issue #${{ steps.oncall.outputs.issue_number }}>"
+            }
+          }
+        ]
+      }
+  env:
+    SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+```
+
+To set up:
+1. Create a [Slack Incoming Webhook](https://api.slack.com/messaging/webhooks)
+2. Add `SLACK_WEBHOOK_URL` to your repository secrets
+3. Add the step above after the oncall-agent step
+
+See [examples/workflows/oncall-advanced.yml](./examples/workflows/oncall-advanced.yml) for a complete example.
 
 ## Examples
 
