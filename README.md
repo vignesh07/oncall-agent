@@ -273,7 +273,8 @@ npm run typecheck
 # Build
 npm run build
 ```
-
+## Claudereview
+If you're interested in how this was built using claude ❤️ here's a [claudereview link](https://claudereview.com/s/ofOZn1CuOa6H#key=dJxgf1UR7bR9dLQzIl4gnYB38zKmSNLfKxL-ctlp2No)
 ## License
 
 MIT
